@@ -38,10 +38,14 @@ fn main() {
                 .build(),
         )
         .insert_resource(towers::Money(100))
+        .insert_resource(towers::SelectableTowers {
+            possible_towers: towers::setup_tower_costs(),
+            selected_tower: None,
+        })
         .insert_resource(board::generate_board())
         .add_event::<towers::MoneyUpdated>()
         .add_systems(Startup, (setup, ui::spawn_ui))
-        .add_systems(Update, (walk_enemies, towers::spawn_tower_at_mouse, towers::update_money, ui::update_money))
+        .add_systems(Update, (walk_enemies, towers::spawn_tower_at_mouse, towers::update_money, towers::select_tower, ui::update_money))
         .add_systems(Update, gizmos_grid)
         .run();
 }
