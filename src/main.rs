@@ -29,7 +29,7 @@ fn main() {
                 .build(),
         )
         .add_plugins((towers::TowerPlugin, enemies::EnemiesPlugin))
-        .insert_resource(towers::Money(1000))
+        .insert_resource(towers::Money(100))
         .insert_resource(board::generate_board())
         .add_systems(Startup, (setup, ui::spawn_ui))
         .add_systems(Update, (ui::update_money, ))

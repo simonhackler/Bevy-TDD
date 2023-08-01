@@ -19,7 +19,7 @@ pub struct MoneyUpdated {
 
 #[derive(Component, Clone, Copy, Debug)]
 pub struct Health {
-    pub health: u32,
+    pub health: i32,
 }
 
 #[derive(Component, Clone, Debug)]
@@ -31,14 +31,14 @@ pub struct MoneyGain {
 #[derive(Component, Clone, Debug)]
 pub struct ProjectileTower {
     pub speed: f32,
-    pub damage: u32,
+    pub damage: i32,
     pub shoot_timer: Timer,
 }
 
 #[derive(Component)]
 pub struct Projectile {
     pub speed: f32,
-    pub damage: u32,
+    pub damage: i32,
 }
 
 #[derive(Bundle, Clone, Debug)]
@@ -78,7 +78,7 @@ impl Plugin for TowerPlugin {
             .add_event::<MoneyUpdated>()
             .add_systems(Update, (
                 spawn_tower_at_mouse, update_money, select_tower, projectile_damage_enemies,
-                shoot_projectiles, move_projectiles, despawn_out_of_bound_projectile))
+                shoot_projectiles, move_projectiles, despawn_out_of_bound_projectile, check_tower_health))
         ;
     }
 }
@@ -91,7 +91,7 @@ fn setup_tower_costs() -> Vec<BuyableTower> {
             tower_type: TowerType::Money( MoneyBundle {
                 money_tower: MoneyGain {
                     money: 50, 
-                    gaintimer: Timer::from_seconds(12.0, TimerMode::Repeating),
+                    gaintimer: Timer::from_seconds(15.0, TimerMode::Repeating),
                 },
                 health: Health { health: 50 },
             })
@@ -233,11 +233,19 @@ fn shoot_projectiles(
     mut commands: Commands,
     time: Res<Time>,
     mut towers: Query<(&mut ProjectileTower, &Transform)>,
+    enemies: Query<(&EnemyHealth, &Transform)>,
     asset_server: Res<AssetServer>
 ) {
     for (mut tower, transform) in &mut towers {
         tower.shoot_timer.tick(time.delta());
-        if tower.shoot_timer.finished() {
+        let mut enemy_present = false;
+        for (_, enemy_transform) in &enemies {
+            if enemy_transform.translation.y == transform.translation.y {
+               enemy_present = true;
+               break; 
+            }
+        }
+        if tower.shoot_timer.finished() && enemy_present {
             commands.spawn((
                 get_sprite_bundle(
                     "kenney/PNG/DefaultSize/towerDefense_tile251.png", transform.translation, &asset_server),
@@ -273,14 +281,26 @@ fn despawn_out_of_bound_projectile(
 fn projectile_damage_enemies(
     mut commands: Commands,
     mut projectiles: Query<(&Transform, &Projectile, Entity)>,
-    mut enemies: Query<(&mut EnemyHealth, &Transform, Entity)>
+    mut enemies: Query<(&mut EnemyHealth, &Transform)>
 ) {
     for (transform, projectile, projectile_ent) in projectiles.iter_mut() {
-        for (mut enemy_health, enemy_transform, enemy_ent) in &mut enemies {
+        for (mut enemy_health, enemy_transform ) in &mut enemies {
             if transform.translation.y == enemy_transform.translation.y && (transform.translation.x - enemy_transform.translation.x).abs() < 10.0 {
                 enemy_health.health -= projectile.damage;
                 commands.entity(projectile_ent).despawn();
             }
         }
     } 
+}
+
+
+fn check_tower_health(
+    mut commands: Commands,
+    query: Query<(&Health, Entity), Changed<Health>>,
+) {
+    for (health, entity) in query.iter() {
+        if health.health <= 0 {
+            commands.entity(entity).despawn();
+        }
+    }
 }
