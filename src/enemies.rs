@@ -61,6 +61,19 @@ lazy_static! {
     };
 }
 
+const TEST_WAVE: [(Enemies, f32); 10] = [
+    (Enemies::Basic, 0.0),
+    (Enemies::Basic, 0.1),
+    (Enemies::Basic, 0.1),
+    (Enemies::Basic, 0.1),
+    (Enemies::Basic, 0.1),
+    (Enemies::Basic, 0.1),
+    (Enemies::Basic, 0.1),
+    (Enemies::Basic, 0.1),
+    (Enemies::BasicHighHealth, 0.1),
+    (Enemies::FastBasic, 0.1),
+];
+
 
 const WAVE_1: [(Enemies, f32); 22] = [
     (Enemies::Basic, 45.0),
