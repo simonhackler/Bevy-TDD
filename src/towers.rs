@@ -1,4 +1,5 @@
-use bevy::{prelude::*, window::PrimaryWindow, };
+use lazy_static::lazy_static;
+use bevy::{prelude::*, window::PrimaryWindow, utils::HashMap, };
 
 use crate::{MainCamera, board::*, enemies::EnemyHealth};
 
@@ -54,17 +55,54 @@ pub struct SimpleProjectileBundle{
 }
 
 #[derive(Clone, Debug)]
-pub enum TowerType {
+pub enum TowerBundle {
     Money(MoneyBundle),
     SimpleProjectile(SimpleProjectileBundle)
+}
+
+#[derive(Hash,PartialEq, Eq, Debug, Clone, Copy)]
+pub enum Tower {
+    Money,
+    NormalProjectile,
 }
 
 #[derive(Clone)]
 pub struct BuyableTower {
     pub cost: u32,
-    pub texture_path: String,
-    pub tower_type: TowerType,
+    pub tower_type: Tower,
 }
+
+lazy_static! {
+    static ref TOWER_IMPLEMENTATIONS: HashMap<Tower, (TowerBundle, String)> = {
+        let mut map = HashMap::new();
+        map.insert(
+            Tower::Money, 
+            (TowerBundle::Money( MoneyBundle {
+                money_tower: MoneyGain {
+                    money: 50, 
+                    gaintimer: Timer::from_seconds(15.0, TimerMode::Repeating),
+                },
+                health: Health { health: 50 },
+                }
+            ), "art/pig.png".to_string())
+        );
+        map.insert(
+            Tower::NormalProjectile,
+            (TowerBundle::SimpleProjectile( SimpleProjectileBundle {
+                projectile_tower: ProjectileTower {
+                    speed: 200.0,
+                    damage: 20,
+                    shoot_timer: Timer::from_seconds(5.0, TimerMode::Repeating), 
+                },
+                health: Health { health: 50 },
+            }), "art/yeti.png".to_string())
+        );
+        map
+    };
+}
+
+#[derive(Component)]
+pub struct Preview(Tower); 
 
 pub struct TowerPlugin;
 
@@ -76,6 +114,7 @@ impl Plugin for TowerPlugin {
                 selected_tower: None,
             })
             .add_event::<MoneyUpdated>()
+            .add_systems(Startup, setup)
             .add_systems(Update, (
                 spawn_tower_at_mouse, update_money, select_tower, projectile_damage_enemies,
                 shoot_projectiles, move_projectiles, despawn_out_of_bound_projectile, check_tower_health))
@@ -83,30 +122,34 @@ impl Plugin for TowerPlugin {
     }
 }
 
+fn setup(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>
+) {
+    spawn_preview(commands, &asset_server, Tower::Money);
+}
+
+fn spawn_preview(
+    mut commands: Commands,
+    asset_server: &Res<AssetServer>,
+    tower: Tower
+) {
+    commands.spawn((
+        get_sprite_bundle(&TOWER_IMPLEMENTATIONS[&tower].1, Vec3::default(), &asset_server, 0.0),
+        Preview(tower)
+    ));
+
+}
+
 fn setup_tower_costs() -> Vec<BuyableTower> {
     vec![
         BuyableTower {
             cost: 100,
-            texture_path: "kenney/PNG/DefaultSize/towerDefense_tile249.png".to_string(),
-            tower_type: TowerType::Money( MoneyBundle {
-                money_tower: MoneyGain {
-                    money: 50, 
-                    gaintimer: Timer::from_seconds(15.0, TimerMode::Repeating),
-                },
-                health: Health { health: 50 },
-            })
+            tower_type: Tower::Money
         },
         BuyableTower {
             cost: 200,
-            texture_path: "kenney/PNG/DefaultSize/towerDefense_tile250.png".to_string(),
-            tower_type: TowerType::SimpleProjectile( SimpleProjectileBundle {
-                projectile_tower: ProjectileTower {
-                    speed: 200.0,
-                    damage: 20,
-                    shoot_timer: Timer::from_seconds(5.0, TimerMode::Repeating), 
-                },
-                health: Health { health: 50 },
-            })
+            tower_type: Tower::NormalProjectile
         },
 
     ]
@@ -132,7 +175,7 @@ fn select_tower(
 }
 
 fn spawn_tower_at_mouse(
-    commands: Commands, 
+    mut commands: Commands, 
     asset_server: Res<AssetServer>, 
     input: Res<Input<MouseButton>>,
     mut board: ResMut<Board>,
@@ -141,13 +184,13 @@ fn spawn_tower_at_mouse(
     selected_tower: Res<SelectableTowers>,
     primary_query: Query<&Window, With<PrimaryWindow>>,
     camera_q: Query<(&Camera, &GlobalTransform), With<MainCamera>>,
+    mut preview_q: Query<(&mut Transform, &mut Sprite, Entity, &Preview)>
 ) {
 
-    if !input.just_pressed(MouseButton::Left) {
-        return;
-    }
-
+    let (mut transform, mut sprite, preview_ent, preview) = preview_q.single_mut();
+    sprite.color.set_a(0.0);
     if let Some(tower_cost) = &selected_tower.selected_tower {
+
         let (camera, camera_transform) = camera_q.single();
 
         let window = primary_query.single();
@@ -159,52 +202,68 @@ fn spawn_tower_at_mouse(
             let grid_pos = convert_world_to_grid(Vec3 {
                 x: world_position.x - GRID_X_SPACING / 2.0, y: world_position.y - GRID_Y_SPACING / 2.0, z: 0.0
             });
+            if !board.towers.contains_key(&grid_pos) {
+                return    
+            }
             if board.towers[&grid_pos] != None {
                 return;
             }
             else if tower_cost.cost > money.0 {
                 return;
             }
-            money.0 -= tower_cost.cost;
-            money_updated.send(MoneyUpdated{
-                new_value: money.0
-            });
-
             let spawn_pos = convert_grid_to_world(grid_pos);
+            if input.just_pressed(MouseButton::Left) {
+                money.0 -= tower_cost.cost;
+                money_updated.send(MoneyUpdated{
+                    new_value: money.0
+                });
 
-            let ent = spawn_tower(commands, spawn_pos, tower_cost, &asset_server);
-            board.towers.insert(grid_pos, Some(ent));
+
+                let ent = spawn_tower(commands, spawn_pos, tower_cost, &asset_server);
+                board.towers.insert(grid_pos, Some(ent));
+            } else {
+                if tower_cost.tower_type != preview.0 {
+                    commands.entity(preview_ent).despawn();
+                   spawn_preview(commands, &asset_server, tower_cost.tower_type); 
+                } else {
+                    transform.translation = spawn_pos;
+                    sprite.color.set_a(0.7);
+                }
+            }
         }
     } else {
         return;
     }
-
-
 }
 
 fn spawn_tower(mut commands: Commands<'_, '_>, spawn_pos: Vec3, tower_cost: &BuyableTower, asset_server: &Res<AssetServer>) -> Entity {
-    let ent = match &tower_cost.tower_type {
-        TowerType::Money(money_tower) => 
+    let texture_path = &TOWER_IMPLEMENTATIONS[&tower_cost.tower_type].1;
+    let ent = match &TOWER_IMPLEMENTATIONS[&tower_cost.tower_type].0 {
+        TowerBundle::Money(money_tower) => 
             commands.spawn((
-                get_sprite_bundle(&tower_cost.texture_path, spawn_pos, asset_server), 
+                get_sprite_bundle(&texture_path, spawn_pos, asset_server, 1.0),
                 money_tower.clone()
             )),
-        TowerType::SimpleProjectile(projectile_tower) => 
+        TowerBundle::SimpleProjectile(projectile_tower) => 
             commands.spawn((
-                get_sprite_bundle(&tower_cost.texture_path, spawn_pos, asset_server),
+                get_sprite_bundle(&texture_path, spawn_pos, asset_server, 1.0),
                 projectile_tower.clone()
             )),
     };
     ent.id()
 }
 
-fn get_sprite_bundle(texture_path: &str, spawn_pos: Vec3, asset_server: &Res<AssetServer>) -> SpriteBundle {
+fn get_sprite_bundle(texture_path: &str, spawn_pos: Vec3, asset_server: &Res<AssetServer>, alpha: f32) -> SpriteBundle {
     return SpriteBundle {
         texture: asset_server.load(texture_path),
         transform: Transform {
             translation: spawn_pos,
-            rotation: Quat::from_rotation_z(-std::f32::consts::FRAC_PI_2),
-            scale: Vec3::new(1.0, 1.0, 1.0),
+            ..Default::default()
+        },
+        sprite: Sprite {
+            custom_size: Some(Vec2::new(200.0, 150.0)),
+            color: Color::rgba(1.0, 1.0, 1.0, alpha),
+            ..default()
         },
         ..default()
     }
@@ -248,7 +307,7 @@ fn shoot_projectiles(
         if tower.shoot_timer.finished() && enemy_present {
             commands.spawn((
                 get_sprite_bundle(
-                    "kenney/PNG/DefaultSize/towerDefense_tile251.png", transform.translation, &asset_server),
+                    "kenney/PNG/DefaultSize/towerDefense_tile251.png", transform.translation, &asset_server, 1.0),
                 Projectile {
                     speed: tower.speed,
                     damage: tower.damage

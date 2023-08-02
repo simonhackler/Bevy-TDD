@@ -16,8 +16,8 @@ pub fn generate_board() -> Board {
     let mut board = Board {
         towers: HashMap::new(),
     };
-    for i in -10..10 {
-        for j in -4..4 {
+    for i in -7..7{
+        for j in -4..3 {
             board.towers.insert((i as i32, j as i32), None);
         }
     }

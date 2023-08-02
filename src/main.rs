@@ -16,7 +16,7 @@ fn main() {
     App::new()
         .add_plugins(
             DefaultPlugins
-                .set(ImagePlugin::default_nearest())
+                .set(ImagePlugin::default_linear())
                 .set(WindowPlugin {
                     primary_window: Some(Window {
                         title: "PvZ Rougelike".into(),
@@ -29,7 +29,7 @@ fn main() {
                 .build(),
         )
         .add_plugins((towers::TowerPlugin, enemies::EnemiesPlugin))
-        .insert_resource(towers::Money(100))
+        .insert_resource(towers::Money(500))
         .insert_resource(board::generate_board())
         .add_systems(Startup, (setup, ui::spawn_ui))
         .add_systems(Update, (ui::update_money, ))
@@ -38,8 +38,7 @@ fn main() {
 }
 
 
-fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
-    //commands.spawn(Camera2dBundle::default());
+fn setup(mut commands: Commands) {
     let mut camera = Camera2dBundle::default();
 
     camera.projection.scaling_mode = ScalingMode::AutoMin {
